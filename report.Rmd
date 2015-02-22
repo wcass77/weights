@@ -6,10 +6,12 @@ output: html_document
 ---
 #Predicting Weight-lifting Activity Class
 First, we load the data. The data has been previously downloaded into the working directory
-using download.data.R.
+using download.data.R (available on Github for inspection). The data is loaded and columns with missing data are excluded. These are summary columns, and we will be predicting based on single rows (which we need to do for the test set). The class of each row is then copied into a seperate variable. The columns for timestamp, name, and window are removed. The outcome, classe, is also removed. The predictors are now in `data3` with the outcome in `class`:
   
+```{r results = 'hide'}
+library(lattice); library(ggplot2); library(caret); library(gbm)
+```
 ```{r}
-library(lattice); library(ggplot2); library(caret)
 set.seed(1234)
 data <- read.csv('training.csv', na.strings = c('NA', ''))
 class <- data$classe
@@ -17,10 +19,9 @@ NAcol <- sapply(data, anyNA)
 data2 <- data[,!NAcol]
 data3 <- data2[,-c(1,2,3,4,5,6,7,60)]
 ```
-The data is loaded and columns with missing data are excluded. These are summary columns, and 
-we will be predicting based on single rows (which we need to do for the test set). The class of each
-row is then copied into a seperate variable. The columns for timestamp, name, and window are removed.
-The outcome, classe, is also removed.
+
+Then the training data is split into train and validate sets, using 80% of the data to train the dataset: 
+
 ```{r}
 trainIndex <- createDataPartition(class, p = .8, list = FALSE, times = 1)
 train <- data3[trainIndex, ]
@@ -28,20 +29,44 @@ class.train <- class[trainIndex]
 validate <- data3[-trainIndex, ]
 class.validate <- class[-trainIndex]
 ```
-Split data into train and validate sets 
+Next we make sure all of the predictors have variance. None of the remaining predictors have near zero variance:
 ```{r}
 nearZeroVar(train)
 ```
-None of the remaining predictors have near zero variance.
+Next we preprocess the predictors, centering, scaling, and performing principle component analysis:
 ```{r}
 procRules <- preProcess(train, method = c('center', 'scale', 'pca'))
 train2 <- predict(procRules, train)
+validate2 <- predict(procRules, validate)
 ```
-
-```{r cache=TRUE}
-trctl <- trainControl(verboseIter = FALSE)
-fit <- train(train2, class.train, method = 'gbm', trControl = trctl)
-cm <- confusionMatrix(class.train, predict(fit))
-cm
+We create a prediction model with `gbm`. This method uses gradient boosting. The output is held for brevity. We plot the accuracy of the boosting iterations:
+```{r cache=TRUE, results='hide'}
+fit <- train(train2, class.train, method = 'gbm')
+trellis.par.set(caretTheme())
+plot(fit)
 ```
+Next, we compare the predictions from this model to the actual class from the data that it was trained on:
+```{r}
+cm1 <- confusionMatrix(class.train, predict(fit))
+cm1
+```
+  
+And then to the 20% of the data we held in reserve for validation:
+```{r}
 
+cm1 <- confusionMatrix(class.validate, predict(fit, newdata = validate2))
+cm1
+```
+  
+This model was chosen because it performed best among several models tested that would compile in a reasonable amount of time. Based on the results above, the accuracy is expected to be similar to the accuracy on the subset of the training set that was held in reserve, 82%.
+
+Finally we generate predictions for the 20 validation data points and generate individual files for each to be uploaded:
+```{r}
+source('pml_write_files.R') #function provided in instructions on course website
+test <- read.csv('test.csv', na.strings = c('NA', ''))
+NAcol.test <- sapply(test, anyNA)
+test2 <- test[,!NAcol]
+test3 <- test2[,-c(1,2,3,4,5,6,7,60)]
+test4 <- predict(procRules, test3)
+predictions <- predict(fit, newdata = test4, type = 'raw')
+pml_write_files(predictions)
