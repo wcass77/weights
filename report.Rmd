@@ -10,17 +10,38 @@ using download.data.R.
   
 ```{r}
 library(lattice); library(ggplot2); library(caret)
-train <- read.csv('training.csv', na.strings = c('NA', ''))
-NAcol <- sapply(train, anyNA)
-train2 <- train[,!NAcol]
-class <- train$classe
-train3 <- train2[,-c(1,2,3,4,5,6,7,60)]
+set.seed(1234)
+data <- read.csv('training.csv', na.strings = c('NA', ''))
+class <- data$classe
+NAcol <- sapply(data, anyNA)
+data2 <- data[,!NAcol]
+data3 <- data2[,-c(1,2,3,4,5,6,7,60)]
 ```
 The data is loaded and columns with missing data are excluded. These are summary columns, and 
 we will be predicting based on single rows (which we need to do for the test set). The class of each
 row is then copied into a seperate variable. The columns for timestamp, name, and window are removed.
 The outcome, classe, is also removed.
 ```{r}
-nearZeroVar(train3, saveMetrics = TRUE)
+trainIndex <- createDataPartition(class, p = .8, list = FALSE, times = 1)
+train <- data3[trainIndex, ]
+class.train <- class[trainIndex]
+validate <- data3[-trainIndex, ]
+class.validate <- class[-trainIndex]
+```
+Split data into train and validate sets 
+```{r}
+nearZeroVar(train)
 ```
 None of the remaining predictors have near zero variance.
+```{r}
+procRules <- preProcess(train, method = c('center', 'scale', 'pca'))
+train2 <- predict(procRules, train)
+```
+
+```{r cache=TRUE}
+trctl <- trainControl(verboseIter = FALSE)
+fit <- train(train2, class.train, method = 'gbm', trControl = trctl)
+cm <- confusionMatrix(class.train, predict(fit))
+cm
+```
+
